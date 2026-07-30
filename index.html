@@ -320,7 +320,7 @@ const ARCHIVE = {
   ],
   "meta": {
     "source": "https://zfcj.gz.gov.cn/zfcj/fyxx/fdcxmxx/",
-    "updated": "2026-07-30T08:42:57.369914",
+    "updated": "2026-07-30T08:55:35.013494",
     "fetched_date": "2026-07-30"
   },
   "projects": [
@@ -92171,7 +92171,7 @@ const COLOR_MAP = {
 };
 // 符号定义（与阳光家缘官方图例一致）：sym=显示字符，order=优先级（数字越小越靠前）
 const MARK_DEFS = [
-  { sym: '⊙',  order: 1,  label: '已签约',   test: r => r.pactStatus === 4 || r.status === 4 },
+  { sym: '⊙',  order: 1,  label: '已签约',   test: r => r.pactStatus === 5 || r.pactStatus === 4 || r.status === 4 },
   { sym: '■',  order: 2,  label: '已备案',   test: r => r.status === 17 || r.filed === 1 },
   { sym: '◆',  order: 3,  label: '抵押',     test: r => r.pledgeStatus === 2 || r.status === 10 },
   { sym: '●',  order: 4,  label: '查封',     test: r => r.sealed === 1 || r.status === 11 },
@@ -92383,7 +92383,9 @@ function decideStatus(r) {
   // 4. 确权可售（深绿）
   else if (r.status === 6) { cls = 's-confirm-on'; label = '确权可售'; }
   // 5. 已签约 → 不可销售（红）
-  else if (r.pactStatus === 4 || r.status === 4) { cls = 's-presell-off'; label = '已签约（不可销售）'; }
+  //    关键：pactStatus===5 表示已签合同（最常见的已签约），pactStatus===4 也表示已签
+  //    preSellStatus===1 + status===4 也可能是已签
+  else if (r.pactStatus === 5 || r.pactStatus === 4 || r.status === 4) { cls = 's-presell-off'; label = '已签约（不可销售）'; }
   // 6. 已备案 → 不可销售（红）
   else if (r.status === 17 || r.filed === 1) { cls = 's-presell-off'; label = '已备案（不可销售）'; }
   // 7. 查封 → 不可销售（红）
