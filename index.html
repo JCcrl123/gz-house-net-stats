@@ -320,7 +320,7 @@ const ARCHIVE = {
   ],
   "meta": {
     "source": "https://zfcj.gz.gov.cn/zfcj/fyxx/fdcxmxx/",
-    "updated": "2026-07-30T08:24:55.070339",
+    "updated": "2026-07-30T08:42:57.369914",
     "fetched_date": "2026-07-30"
   },
   "projects": [
@@ -92169,18 +92169,18 @@ const COLOR_MAP = {
   's-transferred':  { color: '#26A69A', label: '已过户'      },
   's-frozen':       { color: '#1976D2', label: '强制冻结'    },
 };
-// 符号定义：sym=显示字符，trigger=判定函数，order=优先级（数字越小越靠前）
+// 符号定义（与阳光家缘官方图例一致）：sym=显示字符，order=优先级（数字越小越靠前）
 const MARK_DEFS = [
-  { sym: '■',  order: 1,  label: '已网签/已签约', test: r => r.preSellStatus === 1 || r.status === 4 || r.pactStatus === 4 },
-  { sym: '◆',  order: 2,  label: '已备案',        test: r => r.status === 4 || r.pactStatus === 5 || r.filed === 1 },
-  { sym: '‡',  order: 3,  label: '抵押',          test: r => r.pledgeStatus === 2 || r.status === 10 },
-  { sym: '★',  order: 4,  label: '公建配套',      test: r => r.commonMatch === 1 || r.status === 14 },
-  { sym: '☆',  order: 5,  label: '回迁',          test: r => r.backMove === 1 || r.status === 12 },
-  { sym: '◻',  order: 6,  label: '自用',          test: r => r.useself === 1 || r.status === 13 },
-  { sym: '△',  order: 7,  label: '未纳入',        test: r => r.status === 18 },
-  { sym: '▲',  order: 8,  label: '直管',          test: r => r.directly === 1 || r.status === 15 },
-  { sym: '✚',  order: 9,  label: '分成',          test: r => r.divide === 1 || r.status === 16 },
-  { sym: '✕',  order: 10, label: '查封',          test: r => r.sealed === 1 || r.status === 11 },
+  { sym: '⊙',  order: 1,  label: '已签约',   test: r => r.pactStatus === 4 || r.status === 4 },
+  { sym: '■',  order: 2,  label: '已备案',   test: r => r.status === 17 || r.filed === 1 },
+  { sym: '◆',  order: 3,  label: '抵押',     test: r => r.pledgeStatus === 2 || r.status === 10 },
+  { sym: '●',  order: 4,  label: '查封',     test: r => r.sealed === 1 || r.status === 11 },
+  { sym: '★',  order: 5,  label: '未纳入预售', test: r => r.status === 18 },
+  { sym: '△',  order: 6,  label: '回迁房',   test: r => r.backMove === 1 || r.status === 12 },
+  { sym: '□',  order: 7,  label: '自用房',   test: r => r.useself === 1 || r.status === 13 },
+  { sym: '☆',  order: 8,  label: '公建配套', test: r => r.commonMatch === 1 || r.status === 14 },
+  { sym: '▲',  order: 9,  label: '直管房',   test: r => r.directly === 1 || r.status === 15 },
+  { sym: '■',  order: 10, label: '分成',     test: r => r.divide === 1 || r.status === 16 },
 ];
 
 // ===================================================================
@@ -92297,18 +92297,18 @@ const LEGEND_ROWS = [
     { cls: 's-transferred',  label: '已过户'      },
     { cls: 's-frozen',       label: '强制冻结'    },
   ],
-  // 第 2 行：符号（次要状态）
+  // 第 2 行：符号（次要状态，与阳光家缘官方图例一致）
   [
-    { sym: '■',  label: '已网签/已签约' },
-    { sym: '◆',  label: '已备案'        },
-    { sym: '‡',  label: '抵押'          },
-    { sym: '★',  label: '公建配套'      },
-    { sym: '☆',  label: '回迁'          },
-    { sym: '◻',  label: '自用'          },
-    { sym: '△',  label: '未纳入'        },
-    { sym: '▲',  label: '直管'          },
-    { sym: '✚',  label: '分成'          },
-    { sym: '✕',  label: '查封'          },
+    { sym: '★',  label: '未纳入预售' },
+    { sym: '△',  label: '回迁房'      },
+    { sym: '□',  label: '自用房'      },
+    { sym: '☆',  label: '公建配套'    },
+    { sym: '▲',  label: '直管房'      },
+    { sym: '■',  label: '分成'        },
+    { sym: '◆',  label: '抵押'        },
+    { sym: '●',  label: '查封'        },
+    { sym: '⊙',  label: '已签约'      },
+    { sym: '■',  label: '已备案'      },
   ],
 ];
 
@@ -92365,24 +92365,44 @@ window.switchSubtab = function(i) {
   renderSalesTable(currentSubUnits[i]);
 };
 
-// 状态判定：先按 6 色主图，再叠加符号
+// 状态判定：颜色 = 销售状态（可售/不可售/已过户/冻结/确权可售/确权不可售）
+//         符号 = 该户的具体附加情况（已签约/已备案/抵押/查封/回迁/自用/公建/直管/分成/未纳入）
+// 关键规则（与阳光家缘官方一致）：已签约/已备案/抵押/查封/回迁/自用/公建/直管/分成/未纳入 等
+// 都属于"不可销售"，统一红色，符号区分原因。
 function decideStatus(r) {
-  let cls = 's-presell-on';   // 默认：预售可售（亮绿）
+  let cls = 's-presell-on';
   let label = '预售可售';
-  // 强制冻结（最高优先级）
+  // 1. 强制冻结（最高优先级，蓝）
   if (r.closed === 1 && r.preSellStatus === 1 && (r.status === 9 || r.pactStatus === 9)) {
     cls = 's-frozen'; label = '强制冻结';
   }
-  // 已过户
+  // 2. 已过户（青绿）
   else if (r.status === 8) { cls = 's-transferred'; label = '已过户'; }
-  // 确权不可售
+  // 3. 确权不可售（深红）
   else if (r.status === 7) { cls = 's-confirm-off'; label = '确权不可售'; }
-  // 确权可售
+  // 4. 确权可售（深绿）
   else if (r.status === 6) { cls = 's-confirm-on'; label = '确权可售'; }
-  // 不可销售（官方 closed=1）
+  // 5. 已签约 → 不可销售（红）
+  else if (r.pactStatus === 4 || r.status === 4) { cls = 's-presell-off'; label = '已签约（不可销售）'; }
+  // 6. 已备案 → 不可销售（红）
+  else if (r.status === 17 || r.filed === 1) { cls = 's-presell-off'; label = '已备案（不可销售）'; }
+  // 7. 查封 → 不可销售（红）
+  else if (r.sealed === 1 || r.status === 11) { cls = 's-presell-off'; label = '查封（不可销售）'; }
+  // 8. 抵押 → 不可销售（红）
+  else if (r.pledgeStatus === 2 || r.status === 10) { cls = 's-presell-off'; label = '抵押（不可销售）'; }
+  // 9. 特殊用途（回迁/自用/公建/直管/分成/未纳入）→ 不可销售（红）
+  else if (r.backMove === 1 || r.status === 12) { cls = 's-presell-off'; label = '回迁房（不可销售）'; }
+  else if (r.useself === 1 || r.status === 13) { cls = 's-presell-off'; label = '自用房（不可销售）'; }
+  else if (r.commonMatch === 1 || r.status === 14) { cls = 's-presell-off'; label = '公建配套（不可销售）'; }
+  else if (r.directly === 1 || r.status === 15) { cls = 's-presell-off'; label = '直管房（不可销售）'; }
+  else if (r.divide === 1 || r.status === 16) { cls = 's-presell-off'; label = '分成（不可销售）'; }
+  else if (r.status === 18) { cls = 's-presell-off'; label = '未纳入预售（不可销售）'; }
+  // 10. 限制销售 → 红
+  else if (r.status === 5 || r.restricted === 1) { cls = 's-presell-off'; label = '限制销售'; }
+  // 11. 官方 closed=1 兜底 → 红
   else if (r.closed === 1) { cls = 's-presell-off'; label = '不可销售'; }
-  // 其余（含 status 1/2/3、preSellStatus===1、status===5 等）→ 默认亮绿
-  // 符号收集（按优先级排序）
+  // 12. 默认（status 1/2/3）→ 亮绿
+  // 符号收集（按优先级）
   const marks = MARK_DEFS.filter(m => { try { return m.test(r); } catch(e) { return false; } })
                           .sort((a, b) => a.order - b.order)
                           .map(m => ({ sym: m.sym, label: m.label }));
