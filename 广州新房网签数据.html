@@ -149,6 +149,11 @@ footer p { margin: 6px 0; }
   cursor: default; color: #fff; font-size: 13px;
   transition: transform .12s ease, box-shadow .12s ease;
 }
+/* 该楼层没有的房号位置：显示为浅灰虚线格，避免看起来像缺数据 */
+.sales-wrap .room-cell:empty {
+  background: #f5f5f5;
+  border: 1px dashed #e0e0e0;
+}
 .sales-wrap .room-cell:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 10px rgba(0, 0, 0, .15);
@@ -307,7 +312,7 @@ const ARCHIVE = {
   ],
   "meta": {
     "source": "https://zfcj.gz.gov.cn/zfcj/fyxx/fdcxmxx/",
-    "updated": "2026-07-30T07:25:24.937764",
+    "updated": "2026-07-30T08:05:46.284719",
     "fetched_date": "2026-07-30"
   },
   "projects": [
@@ -92388,19 +92393,26 @@ function renderSalesTable(unit) {
   // 按 group 数字倒序（顶层在前）
   const sortedFloors = floors.slice().sort((a, b) => Number(b.group) - Number(a.group));
 
-  // 收集所有房号作为列；按 unitNum 字符串排序
-  const colSet = new Set();
-  sortedFloors.forEach(f => (f.groupData || []).forEach(r => colSet.add(r.unitNum)));
-  const cols = Array.from(colSet).sort();
-
-  // 列数 = 该楼栋披露的「户数」（所有楼层房号的并集），由 JS 动态写入 grid-template-columns
+  // 列数 = 该楼栋「每层户数」（按官方披露的房间位置）。
+  // 取「标准层」= 房间数最多的那一层，用它的房号位置（去掉楼层号后的房号部分）作为列。
+  // 原因：房号是「楼层号+房号」（如 3901=39层01房、3001=30层01房），不同楼层同一位置编号不同，
+  // 如果把所有房号取并集会产生 100+ 列的废海；标准层取法让列数 = 该层户数（几户就有几列）。
+  const stripFloor = (r) => {
+    const u = String(r.unitNum), f = String(r.floorNum || '');
+    return (f && u.startsWith(f)) ? u.slice(f.length) : u.slice(-2);
+  };
+  const stdFloor = sortedFloors.reduce(
+    (a, b) => ((b.groupData || []).length > (a.groupData || []).length) ? b : a,
+    sortedFloors[0]
+  );
+  const cols = (stdFloor.groupData || []).map(stripFloor).sort((a, b) => Number(a) - Number(b));
   const colCount = Math.max(cols.length, 1);
-  // 渲染：第 1 列为楼层号，其后每列对应一个房号（有几户就有几列）
+  // 渲染：第 1 列为楼层号，其后每列对应一个房号位置（按房间数最多的标准层确定列数）
   let html = `<div class="sales-wrap" style="grid-template-columns: 70px repeat(${colCount}, minmax(72px, 1fr));">`;
   sortedFloors.forEach(f => {
     html += `<div class="floor-cell">${escHtml(f.group)}</div>`;
     const map = {};
-    (f.groupData || []).forEach(r => { map[r.unitNum] = r; });
+    (f.groupData || []).forEach(r => { map[stripFloor(r)] = r; });
     for (let i = 0; i < cols.length; i++) {
       const c   = cols[i];
       const r   = map[c];
