@@ -296,10 +296,11 @@ header a  {{ color: var(--accent); text-decoration: none; }}
 .section-header .note    {{ font-size: 12px; opacity: .9; }}
 .section-header .totals  {{ display: flex; gap: 18px; font-size: 14px; }}
 .section-header .totals b{{ font-size: 16px; margin-left: 4px; }}
-table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
+.table-wrap {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
+.table-wrap table {{ width: auto; min-width: 100%; border-collapse: collapse; font-size: 14px; }}
 th, td {{ padding: 10px 12px; border: 1px solid var(--border); text-align: center; }}
 th      {{ background: #f0f4f8; font-weight: 600; color: var(--primary); white-space: nowrap; }}
-td.name {{ text-align: left; min-width: 180px; word-break: break-word; }}
+td.name {{ text-align: left; min-width: 120px; max-width: 220px; word-break: break-word; }}
 td.num  {{ text-align: right; font-variant-numeric: tabular-nums; }}
 tr.total td {{ background: #fff3e0; font-weight: 700; }}
 span.na   {{ color: var(--zero);  font-size: 12px; }}
@@ -555,6 +556,15 @@ function escHtml(s) {{
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }}
 
+function abbrevBldName(proj, fullName) {{
+  // 从官方备案名中提取「数字+栋/号楼」，例如：
+  // 珑曜花园2栋（...） → 2栋；珑曜花园3号楼（...） → 3号楼
+  const m = fullName.match(/(\d+[栋号楼])/);
+  if (m) return `${{proj}}-${{m[1]}}`;
+  // 兜底：保持原名
+  return fullName;
+}}
+
 // ===================================================================
 // 主体表格渲染
 // ===================================================================
@@ -570,7 +580,7 @@ function render() {{
     const note = {json.dumps(mapping_notes, ensure_ascii=False)};
     let rows = p.buildings.map(b => `
       <tr>
-        <td class="name"><span class="bld-link" onclick="openSalesControl('${{escHtml(proj)}}', '${{escHtml(b.name).replace(/'/g, "\\'")}}')">${{escHtml(b.name)}}</span></td>
+        <td class="name"><span class="bld-link" onclick="openSalesControl('${{escHtml(proj)}}', '${{escHtml(b.name).replace(/'/g, "\\'")}}')" title="${{escHtml(b.name)}}">${{escHtml(abbrevBldName(proj, b.name))}}</span></td>
         <td>${{escHtml(b.presell)}}</td>
         <td class="num">${{fmtNum(b.total)}}</td>
         <td class="num">${{fmtNum(b.signed)}}</td>
@@ -617,10 +627,11 @@ function render() {{
           <span>去化率<b>${{fmtRate(s.rate)}}</b></span>
         </div>
       </div>
+      <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>楼栋（官方备案名，点击查看销控表）</th><th>预售证号</th>
+            <th>楼栋</th><th>预售证号</th>
             <th>预售总数</th><th>已网签数</th><th>剩余未网签</th><th>去化率</th>
             <th>日新增</th><th>日环比</th>
             <th>本周累计新增</th><th>周环比</th>
@@ -630,6 +641,7 @@ function render() {{
         </thead>
         <tbody>${{rows}}</tbody>
       </table>
+      </div>
     `;
     tables.appendChild(sec);
   }});
