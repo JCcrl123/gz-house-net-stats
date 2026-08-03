@@ -1,7 +1,7 @@
 {
   "meta": {
     "source": "https://zfcj.gz.gov.cn/zfcj/fyxx/fdcxmxx/",
-    "updated": "2026-08-03T02:49:26.119315",
+    "updated": "2026-08-03T03:18:54.312442",
     "fetched_date": "2026-08-03"
   },
   "records": {
@@ -403100,7 +403100,7 @@
                           "totalArea": 88.42,
                           "inArea": 68.54,
                           "unitType": "3房2厅",
-                          "pledgeStatus": 0,
+                          "pledgeStatus": 2,
                           "closed": 0,
                           "floorNum": "25",
                           "preSellStatus": 1,
@@ -403109,7 +403109,7 @@
                           "commonMatch": 0,
                           "directly": 0,
                           "divide": 0,
-                          "pactStatus": 3,
+                          "pactStatus": 5,
                           "status": 1
                         },
                         {
@@ -403538,7 +403538,7 @@
                           "totalArea": 89.01,
                           "inArea": 69.0,
                           "unitType": "3房2厅",
-                          "pledgeStatus": 0,
+                          "pledgeStatus": 2,
                           "closed": 0,
                           "floorNum": "21",
                           "preSellStatus": 1,
@@ -403547,7 +403547,7 @@
                           "commonMatch": 0,
                           "directly": 0,
                           "divide": 0,
-                          "pactStatus": 3,
+                          "pactStatus": 5,
                           "status": 1
                         },
                         {
@@ -403766,7 +403766,7 @@
                           "commonMatch": 0,
                           "directly": 0,
                           "divide": 0,
-                          "pactStatus": 3,
+                          "pactStatus": 5,
                           "status": 1
                         },
                         {
