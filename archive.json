@@ -1,7 +1,7 @@
 {
   "meta": {
     "source": "https://zfcj.gz.gov.cn/zfcj/fyxx/fdcxmxx/",
-    "updated": "2026-08-03T08:46:18.977454",
+    "updated": "2026-08-03T12:48:08.603675",
     "fetched_date": "2026-08-03"
   },
   "records": {
@@ -375823,7 +375823,7 @@
                           "commonMatch": 0,
                           "directly": 0,
                           "divide": 0,
-                          "pactStatus": 3,
+                          "pactStatus": 5,
                           "status": 1
                         }
                       ]
@@ -376466,8 +376466,8 @@
                           "commonMatch": 0,
                           "directly": 0,
                           "divide": 0,
-                          "pactStatus": 1,
-                          "status": 2
+                          "pactStatus": 3,
+                          "status": 1
                         },
                         {
                           "unitId": "5e8f3d51103d4f6d921459cf0f3aa1fc",
@@ -376523,8 +376523,8 @@
                           "commonMatch": 0,
                           "directly": 0,
                           "divide": 0,
-                          "pactStatus": 1,
-                          "status": 2
+                          "pactStatus": 3,
+                          "status": 1
                         }
                       ]
                     },
@@ -379851,7 +379851,7 @@
                           "totalArea": 89.83,
                           "inArea": 67.6,
                           "unitType": "2房1厅",
-                          "pledgeStatus": 0,
+                          "pledgeStatus": 2,
                           "closed": 0,
                           "floorNum": "9",
                           "preSellStatus": 1,
@@ -379860,7 +379860,7 @@
                           "commonMatch": 0,
                           "directly": 0,
                           "divide": 0,
-                          "pactStatus": 3,
+                          "pactStatus": 5,
                           "status": 1
                         },
                         {
@@ -384388,8 +384388,8 @@
                           "commonMatch": 0,
                           "directly": 0,
                           "divide": 0,
-                          "pactStatus": 1,
-                          "status": 2
+                          "pactStatus": 3,
+                          "status": 1
                         },
                         {
                           "unitId": "22f5624ed35b4e988a1db0b6ed88531f",
