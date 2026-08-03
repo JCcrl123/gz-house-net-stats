@@ -325,7 +325,7 @@ const ARCHIVE = {
   ],
   "meta": {
     "source": "https://zfcj.gz.gov.cn/zfcj/fyxx/fdcxmxx/",
-    "updated": "2026-08-03T08:20:54.568705",
+    "updated": "2026-08-03T08:46:18.977454",
     "fetched_date": "2026-08-03"
   },
   "projects": [
@@ -454927,9 +454927,9 @@ const roomTip       = document.getElementById('roomTip');
 // 次要状态（抵押/查封/公建/回迁/自用/未纳入/直管/分成/已备案等）改用符号
 // ===================================================================
 const COLOR_MAP = {
-  's-presell-off':  { color: '#E53935', label: '不可销售'    },
+  's-presell-off':  { color: '#E53935', label: '已签约/已售' },
   's-confirm-off':  { color: '#C62828', label: '确权不可售'  },
-  's-presell-on':   { color: '#7CB342', label: '预售可售'    },
+  's-presell-on':   { color: '#7CB342', label: '未签约/可售' },
   's-confirm-on':   { color: '#2E7D32', label: '确权可售'    },
   's-transferred':  { color: '#26A69A', label: '已过户'      },
   's-frozen':       { color: '#1976D2', label: '强制冻结'    },
@@ -455073,8 +455073,8 @@ let currentSubIndex = 0;
 const LEGEND_ROWS = [
   // 第 1 行：6 种颜色
   [
-    { cls: 's-presell-off',  label: '不可销售'    },
-    { cls: 's-presell-on',   label: '预售可售'    },
+    { cls: 's-presell-off',  label: '已签约/已售' },
+    { cls: 's-presell-on',   label: '未签约/可售' },
     { cls: 's-confirm-off',  label: '确权不可售'  },
     { cls: 's-confirm-on',   label: '确权可售'    },
     { cls: 's-transferred',  label: '已过户'      },
@@ -455148,13 +455148,13 @@ window.switchSubtab = function(i) {
   renderSalesTable(currentSubUnits[i]);
 };
 
-// 状态判定：颜色 = 销售状态（可售/不可售/已过户/冻结/确权可售/确权不可售）
+// 状态判定：颜色 = 是否已网签/已售（红=已签约/已备案，绿=未签约/可售）
 //         符号 = 该户的具体附加情况（已签约/已备案/抵押/查封/回迁/自用/公建/直管/分成/未纳入）
-// 关键规则（与阳光家缘官方一致）：已签约/已备案/抵押/查封/回迁/自用/公建/直管/分成/未纳入 等
-// 都属于"不可销售"，统一红色，符号区分原因。
+// 关键规则：只有真正完成网签/签约/备案/过户的单元才标红；
+//          抵押/查封/限制销售/公建配套/回迁/自用等「未签约」状态统一亮绿，符号区分原因。
 function decideStatus(r) {
   let cls = 's-presell-on';
-  let label = '预售可售';
+  let label = '未签约/可售';
   // 1. 强制冻结（最高优先级，蓝）
   if (r.closed === 1 && r.preSellStatus === 1 && (r.status === 9 || r.pactStatus === 9)) {
     cls = 's-frozen'; label = '强制冻结';
@@ -455165,29 +455165,24 @@ function decideStatus(r) {
   else if (r.status === 7) { cls = 's-confirm-off'; label = '确权不可售'; }
   // 4. 确权可售（深绿）
   else if (r.status === 6) { cls = 's-confirm-on'; label = '确权可售'; }
-  // 5. 已签约 → 不可销售（红）
-  //    关键：pactStatus===5 表示已签合同（最常见的已签约），pactStatus===4 也表示已签
-  //    preSellStatus===1 + status===4 也可能是已签
-  // 已签约 → 不可销售（红）。pactStatus: 5=已签约(网签) | 3=已签约(认购/草签) | 4=已签约
-  else if (r.pactStatus === 5 || r.pactStatus === 4 || r.pactStatus === 3 || r.status === 4) { cls = 's-presell-off'; label = '已签约（不可销售）'; }
-  // 6. 已备案 → 不可销售（红）
+  // 5. 已签约/已网签/已备案 → 红（已售/不可再售）
+  //    pactStatus: 5=已签约(网签) | 3=已签约(认购/草签) | 4=已签约
+  else if (r.pactStatus === 5 || r.pactStatus === 4 || r.pactStatus === 3 || r.status === 4) {
+    cls = 's-presell-off'; label = '已签约（不可销售）';
+  }
   else if (r.status === 17 || r.filed === 1) { cls = 's-presell-off'; label = '已备案（不可销售）'; }
-  // 7. 查封 → 不可销售（红）
-  else if (r.sealed === 1 || r.status === 11) { cls = 's-presell-off'; label = '查封（不可销售）'; }
-  // 8. 抵押 → 不可销售（红）
-  else if (r.pledgeStatus === 2 || r.status === 10) { cls = 's-presell-off'; label = '抵押（不可销售）'; }
-  // 9. 特殊用途（回迁/自用/公建/直管/分成/未纳入）→ 不可销售（红）
-  else if (r.backMove === 1 || r.status === 12) { cls = 's-presell-off'; label = '回迁房（不可销售）'; }
-  else if (r.useself === 1 || r.status === 13) { cls = 's-presell-off'; label = '自用房（不可销售）'; }
-  else if (r.commonMatch === 1 || r.status === 14) { cls = 's-presell-off'; label = '公建配套（不可销售）'; }
-  else if (r.directly === 1 || r.status === 15) { cls = 's-presell-off'; label = '直管房（不可销售）'; }
-  else if (r.divide === 1 || r.status === 16) { cls = 's-presell-off'; label = '分成（不可销售）'; }
-  else if (r.status === 18) { cls = 's-presell-off'; label = '未纳入预售（不可销售）'; }
-  // 10. 限制销售 → 红
-  else if (r.status === 5 || r.restricted === 1) { cls = 's-presell-off'; label = '限制销售'; }
-  // 11. 官方 closed=1 兜底 → 红
-  else if (r.closed === 1) { cls = 's-presell-off'; label = '不可销售'; }
-  // 12. 默认（status 1/2/3）→ 亮绿
+  // 6. 未签约的其他限制状态 → 亮绿（符号说明具体原因，tooltip 显示详情）
+  else if (r.sealed === 1 || r.status === 11) { label = '查封（未签约）'; }
+  else if (r.pledgeStatus === 2 || r.status === 10) { label = '抵押（未签约）'; }
+  else if (r.backMove === 1 || r.status === 12) { label = '回迁房（未签约）'; }
+  else if (r.useself === 1 || r.status === 13) { label = '自用房（未签约）'; }
+  else if (r.commonMatch === 1 || r.status === 14) { label = '公建配套（未签约）'; }
+  else if (r.directly === 1 || r.status === 15) { label = '直管房（未签约）'; }
+  else if (r.divide === 1 || r.status === 16) { label = '分成（未签约）'; }
+  else if (r.status === 18) { label = '未纳入预售'; }
+  else if (r.status === 5 || r.restricted === 1) { label = '限制销售（未签约）'; }
+  else if (r.closed === 1) { label = '不可销售（未签约）'; }
+  else { label = '预售可售'; }
   // 符号收集（按优先级）
   const marks = MARK_DEFS.filter(m => { try { return m.test(r); } catch(e) { return false; } })
                           .sort((a, b) => a.order - b.order)
