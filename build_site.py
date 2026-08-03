@@ -33,13 +33,17 @@ def compute_comparisons(archive):
             prev   = _prev_date(date, dates)
             wstart = _week_monday(date, dates)
             mstart = _month_first(date, dates)
+            lwstart = _last_week_monday(date, dates)
+            lmstart = _last_month_first(date, dates)
 
             bld_out = []
             for b in snap.get("buildings", []):
-                bld_out.append(_attach_compare(b, date, prev, wstart, mstart, records, proj))
+                bld_out.append(_attach_compare(b, date, prev, wstart, mstart,
+                                               lwstart, lmstart, records, proj))
 
             summary = snap.get("summary", {}).copy()
-            summary = _attach_compare(summary, date, prev, wstart, mstart, records, proj, is_summary=True)
+            summary = _attach_compare(summary, date, prev, wstart, mstart,
+                                      lwstart, lmstart, records, proj, is_summary=True)
             summary["count"] = len(bld_out)
 
             # summary 不带 detail（前端不会用到，节省体积）
@@ -70,9 +74,45 @@ def _month_first(date, dates):
     return cands[0] if cands else None
 
 
-def _attach_compare(item, date, prev, wstart, mstart, records, proj, is_summary=False):
+def _last_week_monday(date, dates):
+    """上一自然周周一，返回该周内第一个有数据的快照日期（用于"上周"参考）。
+
+    数据口径：每个快照 dated D 实际包含 D-1（昨天）全天数据。
+    因此上一自然周（周一~周日）的净新增 = 本周一快照 - 上周一快照。
+    """
+    d        = datetime.strptime(date, "%Y-%m-%d")
+    this_mon = d - timedelta(days=d.weekday())
+    last_mon = this_mon - timedelta(days=7)
+    last_sun = last_mon + timedelta(days=6)
+    lm_str   = last_mon.strftime("%Y-%m-%d")
+    ls_str   = last_sun.strftime("%Y-%m-%d")
+    cands    = [dd for dd in dates if lm_str <= dd <= ls_str]
+    return cands[0] if cands else None
+
+
+def _last_month_first(date, dates):
+    """上一自然月 1 日，返回该月内第一个有数据的快照日期（用于"上月"参考）。
+
+    数据口径：每个快照 dated D 实际包含 D-1（昨天）全天数据。
+    因此上一自然月（1 日~月末）的净新增 = 本月 1 日快照 - 上月 1 日快照。
+    """
+    d              = datetime.strptime(date, "%Y-%m-%d")
+    this_first     = d.replace(day=1)
+    last_month_end = this_first - timedelta(days=1)
+    last_month_fir = last_month_end.replace(day=1)
+    lmf_str        = last_month_fir.strftime("%Y-%m-%d")
+    lme_str        = last_month_end.strftime("%Y-%m-%d")
+    cands          = [dd for dd in dates if lmf_str <= dd <= lme_str]
+    return cands[0] if cands else None
+
+
+def _attach_compare(item, date, prev, wstart, mstart, lwstart, lmstart,
+                   records, proj, is_summary=False):
     out  = dict(item)
     curr = item.get("signed", 0) or 0
+    d    = datetime.strptime(date, "%Y-%m-%d")
+    is_monday       = (d.weekday() == 0)   # 自然周第一天
+    is_month_first  = (d.day == 1)         # 自然月第一天
 
     # 日新增：当天 vs 前一天
     if prev and prev != date and prev in records and proj in records[prev]:
@@ -85,39 +125,66 @@ def _attach_compare(item, date, prev, wstart, mstart, records, proj, is_summary=
             out["day_delta"], out["day_pct"] = None, None
     else:
         out["day_delta"], out["day_pct"] = None, None
-    day_delta = out.get("day_delta")
 
-    # 周新增：当天 vs 本周一（自然周累计）
-    if wstart and wstart in records and proj in records[wstart]:
-        if wstart != date:
-            ref_val = _get_ref_signed(wstart, records, proj, item, is_summary)
-            if ref_val is not None:
-                out["week_delta"] = curr - ref_val
-                out["week_pct"]   = round((curr - ref_val) / ref_val, 6) if ref_val > 0 \
-                                    else (0.0 if curr == ref_val else None)
-            else:
-                out["week_delta"], out["week_pct"] = None, None
+    # 周累计新增：数据口径为"截止昨天（D-1）全天"。
+    # - 自然周第一天（周一）：显示"上周（周一~周日）完整 7 天"数据
+    #   → 参考点取上一自然周周一快照
+    # - 自然周第二天起（周二~周日）：显示"本周累计"
+    #   → 参考点取本周一快照
+    week_ref = lwstart if is_monday else wstart
+    if week_ref and week_ref in records and proj in records[week_ref]:
+        ref_val = _get_ref_signed(week_ref, records, proj, item, is_summary)
+        if ref_val is not None:
+            out["week_delta"] = curr - ref_val
+            out["week_pct"]   = round((curr - ref_val) / ref_val, 6) if ref_val > 0 \
+                                else (0.0 if curr == ref_val else None)
         else:
-            out["week_delta"] = day_delta
-            out["week_pct"]   = out.get("day_pct")
+            out["week_delta"], out["week_pct"] = None, None
     else:
         out["week_delta"], out["week_pct"] = None, None
 
-    # 月新增：当天 vs 本月 1 日（自然月累计）
-    if mstart and mstart in records and proj in records[mstart]:
-        if mstart != date:
-            ref_val = _get_ref_signed(mstart, records, proj, item, is_summary)
-            if ref_val is not None:
-                out["month_delta"] = curr - ref_val
-                out["month_pct"]   = round((curr - ref_val) / ref_val, 6) if ref_val > 0 \
-                                     else (0.0 if curr == ref_val else None)
-            else:
-                out["month_delta"], out["month_pct"] = None, None
+    # 月累计新增：同上逻辑
+    # - 自然月第一天（1 号）：显示"上月（1 日~月末）完整"数据
+    #   → 参考点取上一自然月 1 日快照
+    # - 自然月第二天起（2 号~月末）：显示"本月累计"
+    #   → 参考点取本月 1 日快照
+    month_ref = lmstart if is_month_first else mstart
+    if month_ref and month_ref in records and proj in records[month_ref]:
+        ref_val = _get_ref_signed(month_ref, records, proj, item, is_summary)
+        if ref_val is not None:
+            out["month_delta"] = curr - ref_val
+            out["month_pct"]   = round((curr - ref_val) / ref_val, 6) if ref_val > 0 \
+                                 else (0.0 if curr == ref_val else None)
         else:
-            out["month_delta"] = day_delta
-            out["month_pct"]   = out.get("day_pct")
+            out["month_delta"], out["month_pct"] = None, None
     else:
         out["month_delta"], out["month_pct"] = None, None
+
+    # 上周新增网签：上一自然周（周一~周日）净新增
+    #   = 本周一快照 - 上周一快照
+    if wstart and lwstart and wstart in records and lwstart in records \
+       and proj in records[wstart] and proj in records[lwstart]:
+        end_val   = _get_ref_signed(wstart, records, proj, item, is_summary)
+        start_val = _get_ref_signed(lwstart, records, proj, item, is_summary)
+        if end_val is not None and start_val is not None:
+            out["last_week_delta"] = end_val - start_val
+        else:
+            out["last_week_delta"] = None
+    else:
+        out["last_week_delta"] = None
+
+    # 上月新增网签：上一自然月（1 日~月末）净新增
+    #   = 本月 1 日快照 - 上月 1 日快照
+    if mstart and lmstart and mstart in records and lmstart in records \
+       and proj in records[mstart] and proj in records[lmstart]:
+        end_val   = _get_ref_signed(mstart, records, proj, item, is_summary)
+        start_val = _get_ref_signed(lmstart, records, proj, item, is_summary)
+        if end_val is not None and start_val is not None:
+            out["last_month_delta"] = end_val - start_val
+        else:
+            out["last_month_delta"] = None
+    else:
+        out["last_month_delta"] = None
 
     return out
 
@@ -515,6 +582,8 @@ function render() {{
         <td>${{fmtDeltaPct(b.week_pct)}}</td>
         <td class="num">${{fmtDelta(b.month_delta)}}</td>
         <td>${{fmtDeltaPct(b.month_pct)}}</td>
+        <td class="num">${{fmtDelta(b.last_week_delta)}}</td>
+        <td class="num">${{fmtDelta(b.last_month_delta)}}</td>
       </tr>
     `).join('');
     rows += `
@@ -531,6 +600,8 @@ function render() {{
         <td>${{fmtDeltaPct(s.week_pct)}}</td>
         <td class="num">${{fmtDelta(s.month_delta)}}</td>
         <td>${{fmtDeltaPct(s.month_pct)}}</td>
+        <td class="num">${{fmtDelta(s.last_week_delta)}}</td>
+        <td class="num">${{fmtDelta(s.last_month_delta)}}</td>
       </tr>
     `;
     const sec = document.createElement('div');
@@ -554,6 +625,7 @@ function render() {{
             <th>日新增</th><th>日环比</th>
             <th>本周累计新增</th><th>周环比</th>
             <th>本月累计新增</th><th>月环比</th>
+            <th>上周新增网签</th><th>上月新增网签</th>
           </tr>
         </thead>
         <tbody>${{rows}}</tbody>
