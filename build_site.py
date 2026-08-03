@@ -557,9 +557,9 @@ function escHtml(s) {{
 }}
 
 function abbrevBldName(proj, fullName) {{
-  // 优先匹配「自编号A1# / 自编号14栋」等备案号
-  let m = fullName.match(/自编号\s*([A-Z]?\d+[栋号楼#])/);
-  if (m) return `${{proj}}-${{m[1].replace(/#$/,'')}}`;
+  // 优先匹配「自编号7、8栋 / 自编号A1# / 自编号14栋」等备案号（兼容 N、M 枚举）
+  let m = fullName.match(/自编号\s*([A-Z0-9]+(?:[、,][A-Z0-9]+)*[栋号楼#]?)/);
+  if (m) return `${{proj}}-${{m[1].replace(/#$/,'').replace(/、$/,'')}}`;
   // 再匹配普通「2栋 / 3号楼」
   m = fullName.match(/(\d+[栋号楼])/);
   if (m) return `${{proj}}-${{m[1]}}`;
