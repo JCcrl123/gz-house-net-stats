@@ -557,9 +557,11 @@ function escHtml(s) {{
 }}
 
 function abbrevBldName(proj, fullName) {{
-  // 从官方备案名中提取「数字+栋/号楼」，例如：
-  // 珑曜花园2栋（...） → 2栋；珑曜花园3号楼（...） → 3号楼
-  const m = fullName.match(/(\d+[栋号楼])/);
+  // 优先匹配「自编号A1# / 自编号14栋」等备案号
+  let m = fullName.match(/自编号\s*([A-Z]?\d+[栋号楼#])/);
+  if (m) return `${{proj}}-${{m[1].replace(/#$/,'')}}`;
+  // 再匹配普通「2栋 / 3号楼」
+  m = fullName.match(/(\d+[栋号楼])/);
   if (m) return `${{proj}}-${{m[1]}}`;
   // 兜底：保持原名
   return fullName;
