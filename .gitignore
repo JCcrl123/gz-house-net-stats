@@ -1,0 +1,5 @@
+# 站点构建产物：仅用于 GitHub Pages 部署，不入库（避免与大归档重复占用仓库体积）
+site/
+
+__pycache__/
+*.py[cod]
