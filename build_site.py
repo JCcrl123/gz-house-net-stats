@@ -18,16 +18,17 @@
 import gzip
 import json
 import os
-import shutil
 from datetime import datetime, timedelta
 
 ARCHIVE_DIR = "archive"          # 分片归档目录
 META_NAME   = "meta.json"
 LEGACY      = "archive.json"     # 旧单体归档（迁移前的兜底读取）
 
-OUT_DIR = "site"                 # 站点输出目录（仅用于 Pages 部署，不入库）
-OUT     = os.path.join(OUT_DIR, "广州新房网签数据.html")
-INDEX   = os.path.join(OUT_DIR, "index.html")
+# 说明：保持输出到仓库根目录，与现有 deploy.yml 完全兼容。
+# deploy.yml 位于 .github/workflows/，当前 token 无 workflow 权限，无法随本次修复一并更新，
+# 因此代码侧维持原工作流行为：生成 广州新房网签数据.html，再由工作流 cp 为 index.html。
+OUT   = "广州新房网签数据.html"
+INDEX = "index.html"
 
 
 # =====================================================================
@@ -962,22 +963,14 @@ render();
 </body>
 </html>'''
 
-    os.makedirs(OUT_DIR, exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         f.write(html)
+    # 同时直接生成 index.html：即使工作流里的 cp 步骤缺失也不会影响 Pages 部署
     with open(INDEX, "w", encoding="utf-8") as f:
         f.write(html)
 
-    # 把分片归档拷进站点目录，供前端点击楼栋时按需 fetch 销控明细
-    dest = os.path.join(OUT_DIR, ARCHIVE_DIR)
-    if os.path.isdir(ARCHIVE_DIR):
-        if os.path.isdir(dest):
-            shutil.rmtree(dest)
-        shutil.copytree(ARCHIVE_DIR, dest)
-
     print(f"[build_site] {OUT}  ({len(html)/1024:.0f} KB)")
     print(f"[build_site] {INDEX}  ({len(html)/1024:.0f} KB)")
-    print(f"[build_site] 分片归档已同步 -> {dest}/")
     return html
 
 
