@@ -31,8 +31,9 @@ SALES_URL    = "https://zfcj.gz.gov.cn/ysqgk/Api/WebApi/xmxkbxx.ashx"    # 销�
 # 分片归档：archive/<YYYY-MM-DD>.json.gz  +  archive/meta.json
 # 背景：历史单体 archive.json 已 >100MB，GitHub 会拒绝推送(GH001)，故改为按日分片并 gzip 压缩。
 # 好处：单文件恒定在数百 KB 量级，永不再触碰 GitHub 100MB 单文件上限。
-ARCHIVE_DIR = "archive"
-META_NAME   = "meta.json"
+ARCHIVE_DIR    = "archive"
+META_NAME      = "meta.json"
+LEGACY_ARCHIVE = "archive.json"   # 旧单体归档，迁移后删除
 
 # ===== 监控的楼盘（展示名 → 官方备案名）=====
 PROJECTS = {
@@ -238,8 +239,25 @@ def build_project_snapshot(alias, cfg):
     return {"buildings": buildings, "summary": summary}
 
 
+def _migrate_legacy_archive():
+    """把旧的单体 archive.json 拆分为按日分片（幂等，迁移后自动跳过）。
+
+    之所以放在 scraper 内调用：.github/workflows/ 下的文件需要 workflow 权限才能修改，
+    在无法更新工作流的情况下，让代码侧自行完成迁移即可。
+    """
+    if not os.path.exists(LEGACY_ARCHIVE):
+        return
+    try:
+        import migrate_archive
+        migrate_archive.main()
+    except Exception as e:
+        print(f"[scraper] 旧归档迁移失败（将导致推送超限）: {e}")
+
+
 # ===== 入口 =====
 def run(target_date=None):
+    _migrate_legacy_archive()
+
     if target_date is None:
         # 北京时间（UTC+8）日期，对齐 cron 09:00 CST
         target_date = (datetime.utcnow() + timedelta(hours=8)).strftime("%Y-%m-%d")
