@@ -1,24 +1,63 @@
 #!/usr/bin/env python3.11
 # -*- coding: utf-8 -*-
-"""读取 archive.json，计算日/周/月环比，生成可日期查询的单文件 HTML 网站。
+"""读取分片归档，计算日/周/月环比，生成可日期查询的 HTML 网站。
 
 数据来源：广州市住房和城乡建设局 · 阳光家缘 · 房地产项目信息
           https://zfcj.gz.gov.cn/zfcj/fyxx/fdcxmxx/
 所有数据均来自阳光家缘官方公开接口，不做任何人工估算。
+
+体积治理（2026-09）
+------------------
+旧实现把全量销控明细(detail)内联进单个 HTML，导致 index.html 超 100MB 被 GitHub 拒推。
+现改为：
+  * 归档按日分片 + gzip：archive/<YYYY-MM-DD>.json.gz（单文件 ~0.13MB）
+  * HTML 只内联「轻量指标」（剥离 detail，单日 ~10KB），体积下降约 99.6%
+  * 销控明细改为点击楼栋时按需 fetch + 浏览器端 gzip 解压（DecompressionStream）
 """
+
+import gzip
 import json
+import os
+import shutil
 from datetime import datetime, timedelta
 
-ARCHIVE = "archive.json"
-OUT     = "广州新房网签数据.html"
+ARCHIVE_DIR = "archive"          # 分片归档目录
+META_NAME   = "meta.json"
+LEGACY      = "archive.json"     # 旧单体归档（迁移前的兜底读取）
+
+OUT_DIR = "site"                 # 站点输出目录（仅用于 Pages 部署，不入库）
+OUT     = os.path.join(OUT_DIR, "广州新房网签数据.html")
+INDEX   = os.path.join(OUT_DIR, "index.html")
 
 
 # =====================================================================
 # 数据加载 + 日/周/月环比计算（沿用既有逻辑，保持原网站日/周/月新增的语义）
 # =====================================================================
 def load_archive():
-    with open(ARCHIVE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """从分片目录读取归档；若分片不存在则回退读取旧单体 archive.json（迁移前兜底）。"""
+    records = {}
+    if os.path.isdir(ARCHIVE_DIR):
+        # 文件名 YYYY-MM-DD.json.gz，字典序即时间序
+        for name in sorted(os.listdir(ARCHIVE_DIR)):
+            if not name.endswith(".json.gz"):
+                continue
+            date = name[: -len(".json.gz")]
+            with gzip.open(os.path.join(ARCHIVE_DIR, name), "rt", encoding="utf-8") as f:
+                records[date] = json.load(f)
+
+    meta = {}
+    meta_path = os.path.join(ARCHIVE_DIR, META_NAME)
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+
+    if not records and os.path.exists(LEGACY):
+        with open(LEGACY, "r", encoding="utf-8") as f:
+            old = json.load(f)
+        records = old.get("records", {}) or {}
+        meta    = old.get("meta", {}) or {}
+
+    return {"meta": meta, "records": records}
 
 
 def compute_comparisons(archive):
@@ -204,10 +243,36 @@ def _get_ref_signed(ref_date, records, proj, item, is_summary):
 # =====================================================================
 # HTML 生成（含 Modal 弹窗 + 销控表 CSS Grid 渲染）
 # =====================================================================
+def _strip_detail(data):
+    """剥离每个楼栋的 detail（销控明细），只保留列表与环比指标。
+
+    detail 占单日体积的 99.6%，把它内联进 HTML 正是 index.html 膨胀到 100MB 的根因。
+    现改为：点击楼栋时从 archive/<date>.json.gz 按需 fetch。
+    """
+    light = {
+        "dates":    data["dates"],
+        "meta":     data["meta"],
+        "projects": data["projects"],
+        "records":  {},
+    }
+    for date, projs in data["records"].items():
+        light["records"][date] = {}
+        for proj, pd in projs.items():
+            light["records"][date][proj] = {
+                "buildings": [
+                    {k: v for k, v in b.items() if k != "detail"}
+                    for b in pd.get("buildings", [])
+                ],
+                "summary": pd.get("summary", {}),
+            }
+    return light
+
+
 def build_html(data):
     dates        = data["dates"]
     latest       = dates[-1] if dates else ""
-    data_json    = json.dumps(data, ensure_ascii=False, indent=2)
+    data         = _strip_detail(data)          # 内联数据剥离 detail（体积主因）
+    data_json    = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     data_json    = data_json.replace("</", "<\\/")  # 防 </script> 注入
 
     mapping_notes = {
@@ -693,21 +758,53 @@ function renderLegend() {{
   salesLegend.innerHTML = `<div class="legend-block">${{html}}</div>`;
 }}
 
-function openSalesControl(proj, bldName) {{
+// ===================================================================
+// 销控明细按需加载（lazy load）
+//   detail 已从内联数据中剥离，点击楼栋时才拉取 archive/<date>.json.gz，
+//   同一日期只拉取一次，结果缓存在 DETAIL_CACHE。
+// ===================================================================
+const DETAIL_CACHE = {{}};
+
+async function loadDateDetail(date) {{
+  if (DETAIL_CACHE[date]) return DETAIL_CACHE[date];
+  const resp = await fetch('archive/' + date + '.json.gz');
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  let rec;
+  if (typeof DecompressionStream === 'function') {{
+    const ds = new DecompressionStream('gzip');
+    rec = await new Response(resp.body.pipeThrough(ds)).json();
+  }} else {{
+    throw new Error('当前浏览器不支持 DecompressionStream，无法解压销控数据');
+  }}
+  DETAIL_CACHE[date] = rec;
+  return rec;
+}}
+
+async function openSalesControl(proj, bldName) {{
   const date = dateSel.value;
-  const p    = (ARCHIVE.records[date] || {{}})[proj];
-  if (!p) return;
-  const b = p.buildings.find(x => x.name === bldName);
-  if (!b) return;
-  const detail = b.detail || {{}};
-  const units  = detail.units || {{}};
-  const bids   = Object.keys(units);
   renderLegend();
+  modalTitle.textContent   = `${{proj}} · ${{bldName}}`;
+  modalSubtabs.innerHTML   = '';
+  salesTableWrap.innerHTML = '<div class="no-detail">正在加载销控表…</div>';
+  modalOverlay.classList.add('open');
+
+  let rec;
+  try {{
+    rec = await loadDateDetail(date);
+  }} catch (e) {{
+    salesTableWrap.innerHTML = '<div class="no-detail">销控数据加载失败：' + escHtml(String(e)) + '</div>';
+    return;
+  }}
+
+  const p = rec[proj];
+  if (!p) {{ salesTableWrap.innerHTML = '<div class="no-detail">该日期无此项目数据</div>'; return; }}
+  const b = (p.buildings || []).find(x => x.name === bldName);
+  if (!b) {{ salesTableWrap.innerHTML = '<div class="no-detail">未找到该楼栋</div>'; return; }}
+
+  const units = (b.detail || {{}}).units || {{}};
+  const bids  = Object.keys(units);
   if (bids.length === 0) {{
-    modalTitle.textContent     = `${{proj}} · ${{bldName}}`;
-    modalSubtabs.innerHTML     = '';
-    salesTableWrap.innerHTML   = '<div class="no-detail">暂无销控表楼层数据（可能官方接口暂未返回）</div>';
-    modalOverlay.classList.add('open');
+    salesTableWrap.innerHTML = '<div class="no-detail">暂无销控表楼层数据（可能官方接口暂未返回）</div>';
     return;
   }}
   currentSubUnits = bids.map(bid => ({{ bid, ...units[bid] }}));
@@ -715,7 +812,6 @@ function openSalesControl(proj, bldName) {{
   modalTitle.textContent = `${{proj}} · ${{bldName}}（预售证 ${{b.presell || ''}}）`;
   renderSubtabs();
   renderSalesTable(currentSubUnits[0]);
-  modalOverlay.classList.add('open');
 }}
 
 function renderSubtabs() {{
@@ -866,9 +962,23 @@ render();
 </body>
 </html>'''
 
+    os.makedirs(OUT_DIR, exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"[build_site] generated {OUT} ({len(html)} bytes)")
+    with open(INDEX, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    # 把分片归档拷进站点目录，供前端点击楼栋时按需 fetch 销控明细
+    dest = os.path.join(OUT_DIR, ARCHIVE_DIR)
+    if os.path.isdir(ARCHIVE_DIR):
+        if os.path.isdir(dest):
+            shutil.rmtree(dest)
+        shutil.copytree(ARCHIVE_DIR, dest)
+
+    print(f"[build_site] {OUT}  ({len(html)/1024:.0f} KB)")
+    print(f"[build_site] {INDEX}  ({len(html)/1024:.0f} KB)")
+    print(f"[build_site] 分片归档已同步 -> {dest}/")
+    return html
 
 
 if __name__ == "__main__":
