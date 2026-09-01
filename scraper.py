@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import re
+import gzip
 import time
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
@@ -27,7 +28,11 @@ DETAIL_URL   = "https://zfcj.gz.gov.cn/ysqgk/Api/WebApi/fdcxmjbxx.ashx"  # 楼�
 BUILDING_URL = "https://zfcj.gz.gov.cn/ysqgk/Api/WebApi/xmldxx.ashx"     # 楼栋列表（拿 buildingId）
 SALES_URL    = "https://zfcj.gz.gov.cn/ysqgk/Api/WebApi/xmxkbxx.ashx"    # 销控表（楼层×房号）
 
-ARCHIVE = "archive.json"
+# 分片归档：archive/<YYYY-MM-DD>.json.gz  +  archive/meta.json
+# 背景：历史单体 archive.json 已 >100MB，GitHub 会拒绝推送(GH001)，故改为按日分片并 gzip 压缩。
+# 好处：单文件恒定在数百 KB 量级，永不再触碰 GitHub 100MB 单文件上限。
+ARCHIVE_DIR = "archive"
+META_NAME   = "meta.json"
 
 # ===== 监控的楼盘（展示名 → 官方备案名）=====
 PROJECTS = {
@@ -252,20 +257,23 @@ def run(target_date=None):
                 "error":     str(e),
             }
 
-    # 读取并追加写入 archive（按 fetched_date 索引，自动分日存档）
-    archive = {"meta": {}, "records": {}}
-    if os.path.exists(ARCHIVE):
-        with open(ARCHIVE, "r", encoding="utf-8") as f:
-            archive = json.load(f)
-    archive["meta"]["source"]       = "https://zfcj.gz.gov.cn/zfcj/fyxx/fdcxmxx/"
-    archive["meta"]["updated"]      = datetime.now().isoformat()
-    archive["meta"]["fetched_date"] = target_date
-    archive["records"][target_date] = out
+    # 分片写入：每天一个 gzip 文件，不再读取/重写整个历史归档（旧实现每天要重写 >100MB）
+    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    day_path = os.path.join(ARCHIVE_DIR, f"{target_date}.json.gz")
+    with gzip.open(day_path, "wt", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
 
-    with open(ARCHIVE, "w", encoding="utf-8") as f:
-        json.dump(archive, f, ensure_ascii=False, indent=2)
-    print(f"[scraper] archived {target_date} -> {ARCHIVE}")
-    return archive
+    meta = {
+        "source":       "https://zfcj.gz.gov.cn/zfcj/fyxx/fdcxmxx/",
+        "updated":      datetime.now().isoformat(),
+        "fetched_date": target_date,
+    }
+    with open(os.path.join(ARCHIVE_DIR, META_NAME), "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+
+    kb = os.path.getsize(day_path) / 1024
+    print(f"[scraper] archived {target_date} -> {day_path} ({kb:.0f} KB)")
+    return {"meta": meta, "records": {target_date: out}}
 
 
 if __name__ == "__main__":
