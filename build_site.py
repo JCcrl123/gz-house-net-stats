@@ -30,6 +30,14 @@ LEGACY      = "archive.json"     # 旧单体归档（迁移前的兜底读取）
 OUT   = "广州新房网签数据.html"
 INDEX = "index.html"
 
+# 分期分组：表格按「一期 / 二期」分段并各加一行小计（未配置的楼盘渲染方式不变）
+GROUPS = {
+    "珑曜上城": [
+        {"label": "一期", "nums": [1, 2, 3, 4, 8, 9]},
+        {"label": "二期", "nums": [5, 6, 7]},
+    ],
+}
+
 
 # =====================================================================
 # 数据加载 + 日/周/月环比计算（沿用既有逻辑，保持原网站日/周/月新增的语义）
@@ -363,13 +371,15 @@ header a  {{ color: var(--accent); text-decoration: none; }}
 .section-header .totals  {{ display: flex; gap: 18px; font-size: 14px; }}
 .section-header .totals b{{ font-size: 16px; margin-left: 4px; }}
 .table-wrap {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
-.table-wrap table {{ width: auto; min-width: 100%; border-collapse: collapse; font-size: 14px; }}
-th, td {{ padding: 10px 12px; border: 1px solid var(--border); text-align: center; }}
-th      {{ background: #f0f4f8; font-weight: 600; color: var(--primary); white-space: nowrap; }}
-td.name {{ text-align: left; min-width: 120px; max-width: 220px; word-break: break-word; }}
+.table-wrap table {{ width: 100%; min-width: 100%; border-collapse: collapse; font-size: 13px; }}
+th, td {{ padding: 8px 6px; border: 1px solid var(--border); text-align: center; }}
+th      {{ background: #f0f4f8; font-weight: 600; color: var(--primary); white-space: nowrap; font-size: 12px; line-height: 1.35; }}
+td.name {{ text-align: left; min-width: 132px; max-width: 220px; word-break: break-word; }}
 td.num  {{ text-align: right; font-variant-numeric: tabular-nums; }}
 tr.total td {{ background: #fff3e0; font-weight: 700; }}
-span.na   {{ color: var(--zero);  font-size: 12px; }}
+tr.grp td {{ background: #dfe9f3; color: var(--primary); font-weight: 700; text-align: left; padding: 6px 12px; font-size: 14px; }}
+tr.sub td {{ background: #f1f6fb; font-weight: 700; color: #14486c; }}
+span.na   {{ color: var(--zero);  font-size: 13px; }}
 span.up   {{ color: var(--up);    font-weight: 600; }}
 span.down {{ color: var(--down);  font-weight: 600; }}
 span.zero {{ color: var(--zero); }}
@@ -625,10 +635,10 @@ function escHtml(s) {{
 function abbrevBldName(proj, fullName) {{
   // 优先匹配「自编号7、8栋 / 自编号A1# / 自编号14栋」等备案号（兼容 N、M 枚举）
   let m = fullName.match(/自编号\s*([A-Z0-9]+(?:[、,][A-Z0-9]+)*[栋号楼#]?)/);
-  if (m) return `${{proj}}-${{m[1].replace(/#$/,'').replace(/、$/,'')}}`;
+  if (m) return `${{proj}}-${{m[1].replace(/#$/,'').replace(/、$/,'').replace(/号楼$/,'栋').replace(/号$/,'栋')}}`;
   // 再匹配普通「2栋 / 3号楼」
   m = fullName.match(/(\d+[栋号楼])/);
-  if (m) return `${{proj}}-${{m[1]}}`;
+  if (m) return `${{proj}}-${{m[1].replace(/号楼$/,'栋').replace(/号$/,'栋')}}`;
   // 兜底：保持原名
   return fullName;
 }}
@@ -646,7 +656,7 @@ function render() {{
     const p = rec[proj] || {{ buildings: [], summary: {{ total: 0, signed: 0, remaining: 0, rate: 0, count: 0 }} }};
     const s = p.summary;
     const note = {json.dumps(mapping_notes, ensure_ascii=False)};
-    let rows = p.buildings.map(b => `
+    const rowTpl = b => `
       <tr>
         <td class="name"><span class="bld-link" onclick="openSalesControl('${{escHtml(proj)}}', '${{escHtml(b.name).replace(/'/g, "\\'")}}')" title="${{escHtml(b.name)}}">${{escHtml(abbrevBldName(proj, b.name))}}</span></td>
         <td>${{escHtml(b.presell)}}</td>
@@ -663,7 +673,56 @@ function render() {{
         <td class="num">${{fmtDelta(b.last_week_delta)}}</td>
         <td class="num">${{fmtDelta(b.last_month_delta)}}</td>
       </tr>
-    `).join('');
+    `;
+
+    // ===== 分期小计（仅配置了分组的楼盘生效，其余楼盘保持原样）=====
+    const GRP = {json.dumps(GROUPS, ensure_ascii=False)}[proj];
+    const bldNo = b => {{
+      const m = String(b.name).match(/(\d+)\s*[栋号楼]/);
+      return m ? parseInt(m[1], 10) : 0;
+    }};
+    const hasRec = b => !!(b.presell || b.total > 0 || b.signed > 0);
+    const sumOf = (list, k) => list.reduce((a, b) => a + (Number(b[k]) || 0), 0);
+    const dvOf = (list, k) => list.some(b => b[k] !== null && b[k] !== undefined) ? sumOf(list, k) : null;
+    const subRow = (label, list, cls) => {{
+      const t = sumOf(list, 'total'), sd = sumOf(list, 'signed'), rm = sumOf(list, 'remaining');
+      const d = dvOf(list, 'day_delta'), w = dvOf(list, 'week_delta'), mo = dvOf(list, 'month_delta');
+      const pc = v => (v === null) ? null : ((sd - v) > 0 ? v / (sd - v) : 0);
+      return `
+      <tr class="${{cls}}">
+        <td class="name">${{label}}</td>
+        <td>—</td>
+        <td class="num">${{fmtNum(t)}}</td>
+        <td class="num">${{fmtNum(sd)}}</td>
+        <td class="num">${{fmtNum(rm)}}</td>
+        <td>${{fmtRate(t > 0 ? sd / t : 0)}}</td>
+        <td class="num">${{fmtDelta(d)}}</td>
+        <td>${{fmtDeltaPct(pc(d))}}</td>
+        <td class="num">${{fmtDelta(w)}}</td>
+        <td>${{fmtDeltaPct(pc(w))}}</td>
+        <td class="num">${{fmtDelta(mo)}}</td>
+        <td>${{fmtDeltaPct(pc(mo))}}</td>
+        <td class="num">${{fmtDelta(dvOf(list, 'last_week_delta'))}}</td>
+        <td class="num">${{fmtDelta(dvOf(list, 'last_month_delta'))}}</td>
+      </tr>`;
+    }};
+    let rows = '';
+    if (GRP) {{
+      const used = [];
+      GRP.forEach(g => {{
+        const list = p.buildings.filter(b => g.nums.indexOf(bldNo(b)) >= 0 && hasRec(b))
+                                 .sort((a, b) => bldNo(a) - bldNo(b));
+        if (!list.length) return;
+        used.push(...list);
+        rows += `<tr class="grp"><td colspan="14">${{g.label}}（${{g.nums.join('、')}} 号楼）</td></tr>`;
+        list.forEach(b => rows += rowTpl(b));
+        rows += subRow(g.label + '小计', list, 'sub');
+      }});
+      // 未归入分组的楼栋照常显示；完全没有官方记录的楼栋不占行
+      p.buildings.filter(b => used.indexOf(b) < 0 && hasRec(b)).forEach(b => rows += rowTpl(b));
+    }} else {{
+      rows = p.buildings.map(rowTpl).join('');
+    }}
     rows += `
       <tr class="total">
         <td class="name">合计（${{s.count}} 条官方记录）</td>
@@ -702,9 +761,9 @@ function render() {{
             <th>楼栋</th><th>预售证号</th>
             <th>预售总数</th><th>已网签数</th><th>剩余未网签</th><th>去化率</th>
             <th>日新增</th><th>日环比</th>
-            <th>本周累计新增</th><th>周环比</th>
-            <th>本月累计新增</th><th>月环比</th>
-            <th>上周新增网签</th><th>上月新增网签</th>
+            <th>本周累计<br>新增</th><th>周环比</th>
+            <th>本月累计<br>新增</th><th>月环比</th>
+            <th>上周<br>新增网签</th><th>上月<br>新增网签</th>
           </tr>
         </thead>
         <tbody>${{rows}}</tbody>
@@ -810,7 +869,7 @@ async function openSalesControl(proj, bldName) {{
   }}
   currentSubUnits = bids.map(bid => ({{ bid, ...units[bid] }}));
   currentSubIndex = 0;
-  modalTitle.textContent = `${{proj}} · ${{bldName}}（预售证 ${{b.presell || ''}}）`;
+  modalTitle.textContent = `${{proj}} · ${{bldName}}` + (b.presell ? `（预售证 ${{b.presell}}）` : '');
   renderSubtabs();
   renderSalesTable(currentSubUnits[0]);
 }}
@@ -838,6 +897,10 @@ window.switchSubtab = function(i) {{
 function decideStatus(r) {{
   let cls = 's-presell-on';
   let label = '未签约/可售';
+  // 0. 未纳入预售（preSellStatus=0）：官方销控表标红，如珑曜上城7栋全部房源
+  if (r.preSellStatus === 0 && r.pactStatus === 1) {{
+    return {{ cls: 's-presell-off', label: '未纳入预售', marks: [{{ sym: '★', label: '未纳入预售' }}] }};
+  }}
   // 1. 强制冻结（最高优先级，蓝）
   if (r.closed === 1 && r.preSellStatus === 1 && (r.status === 9 || r.pactStatus === 9)) {{
     cls = 's-frozen'; label = '强制冻结';

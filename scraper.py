@@ -154,11 +154,19 @@ def _fetch_one_building_detail(project_id, presell_no):
     返回: {"buildings": [...], "units": {buildingId: {name, fullName, floors}}, "error": str|None}
     失败容错：单个楼栋失败不影响其它楼栋，最终 error 字段记录所有错误信息。"""
     detail = {"buildings": [], "units": {}, "error": None}
-    if not (project_id and presell_no):
-        detail["error"] = "missing projectId/presell"
+    if not project_id:
+        detail["error"] = "missing projectId"
         return detail
     try:
-        detail["buildings"] = fetch_building_list(project_id, presell_no)
+        # 尚未取得预售证的楼栋（如珑曜花园7号楼）官方同样披露销控表：
+        # 楼栋列表接口支持只传 sProjectId，因此缺证号时按项目抓取，不放弃；
+        # 日后取得证号，此处自动改为按证号抓取。
+        if presell_no:
+            detail["buildings"] = fetch_building_list(project_id, presell_no)
+        else:
+            detail["buildings"] = _get(
+                f"{BUILDING_URL}?{urlencode({'sProjectId': project_id})}", HEADERS_DETAIL
+            ).get("data", []) or []
     except Exception as e:
         detail["error"] = f"fetch_building_list failed: {e}"
         return detail
@@ -205,7 +213,7 @@ def build_project_snapshot(alias, cfg):
     buildings = []
     for r in uniq:
         project_id = r.get("projectId", "")
-        presell    = r.get("presell", "")
+        presell    = r.get("presell") or ""
         sold       = int(r.get("houseSoldNum",   0) or 0)
         unsale     = int(r.get("houseUnsaleNum", 0) or 0)
         total      = sold + unsale
